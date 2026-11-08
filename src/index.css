@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    background-color: #050506;
+    color: #ffffff;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #050506;
+    color: #ffffff;
+    overflow-x: hidden;
+  }
+}
+
+/* Subtle Hardware Grid & Atmospheric Overlays */
+.hardware-grid-bg {
+  background-size: 48px 48px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+.hardware-subgrid-bg {
+  background-size: 12px 12px;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 0);
+}
+
+.atmospheric-glow {
+  background: radial-gradient(
+    ellipse 65% 50% at 50% 42%,
+    rgba(255, 255, 255, 0.075) 0%,
+    rgba(160, 165, 180, 0.03) 45%,
+    rgba(5, 5, 6, 0) 80%
+  );
+}
+
+/* Custom Monochromatic Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #050506;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
