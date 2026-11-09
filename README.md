@@ -20,7 +20,7 @@ An interactive 3D engineering portfolio built for **Matthew** — a Data Science
   - Hovering any module extends an articulated upper robotic arm limb down from the top of the viewport to clamp the card.
   - Single-line auto-scrolling language/toolchain tags and full specification modal on click.
 - **Direct Uplink & Contact Transmission (`.03 // CONTACT`)**:
-  - Direct links to GitHub (`github.com/matthewchongg`), LinkedIn, and Electronic Mail (`matthewchong.dev@gmail.com`).
+  - Direct links to GitHub (`github.com/matthewchongg`), LinkedIn, and Electronic Mail (`matthew.chong.dev@gmail.com`).
 
 ---
 

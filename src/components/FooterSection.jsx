@@ -45,7 +45,7 @@ export default function FooterSection() {
     const body = encodeURIComponent(
       `Name: ${name.trim()}\nEmail: ${email.trim()}\n\nMessage:\n${message.trim()}`
     );
-    window.location.href = `mailto:matthewchong.dev@gmail.com?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:matthew.chong.dev@gmail.com?subject=${subject}&body=${body}`;
 
     setTimeout(() => {
       setStatus('SENT');
@@ -127,9 +127,9 @@ export default function FooterSection() {
                 </SocialIconLink>
 
                 <SocialIconLink
-                  href="mailto:matthewchong.dev@gmail.com"
+                  href="mailto:matthew.chong.dev@gmail.com"
                   label="Electronic Mail"
-                  handle="matthewchong.dev@gmail.com"
+                  handle="matthew.chong.dev@gmail.com"
                 >
                   <EmailIcon className="w-5 h-5" />
                 </SocialIconLink>
@@ -157,7 +157,7 @@ export default function FooterSection() {
                   Contact Form
                 </h3>
                 <p className="font-mono text-xs text-zinc-500 mt-0.5">
-                  PACKET_TRANSMISSION // matthewchong.dev@gmail.com
+                  PACKET_TRANSMISSION // matthew.chong.dev@gmail.com
                 </p>
               </div>
               <span className="font-mono text-[11px] px-2.5 py-1 rounded bg-white/[0.06] border border-white/10 text-zinc-300">
@@ -330,7 +330,7 @@ export default function FooterSection() {
               <LinkedInIcon className="w-4 h-4" />
             </a>
             <a
-              href="mailto:matthewchong.dev@gmail.com"
+              href="mailto:matthew.chong.dev@gmail.com"
               aria-label="Email"
               className="text-zinc-400 hover:text-white transition-colors"
             >

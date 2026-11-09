@@ -96,6 +96,8 @@ function IndustrialArmAndBlock({
     tipY: -0.25,
     prevTipX: -0.65,
     prevTipY: -0.25,
+    smoothTipVelX: 0,
+    smoothTipVelY: 0,
     turretAngle: Math.PI * 0.85,
     theta1: 1.35,
     theta2: -1.1,
@@ -110,6 +112,8 @@ function IndustrialArmAndBlock({
     blockRotZ: 0,
     blockAngularVel: 0,
     isGrippingBlock: false,
+    releaseGraceTimer: 0,
+    clawPitch: -Math.PI * 0.48,
     supportSurfaceY: FLOOR_Y,
     squishX: 1,
     squishY: 1,
@@ -228,6 +232,9 @@ function IndustrialArmAndBlock({
     if (s.buttonCooldown > 0) {
       s.buttonCooldown = Math.max(0, s.buttonCooldown - dt);
     }
+    if (s.releaseGraceTimer > 0) {
+      s.releaseGraceTimer = Math.max(0, s.releaseGraceTimer - dt);
+    }
 
     // 1. Convert screen mouse to world coordinates on the working plane Z_PLANE
     const camZ = state.camera.position.z || 4.6;
@@ -262,8 +269,8 @@ function IndustrialArmAndBlock({
     const shoulderX = BASE_X;
     const shoulderY = BASE_Y + SHOULDER_OFFSET_Y;
 
-    cursorWorldX = THREE.MathUtils.clamp(cursorWorldX, -2.15, 2.25);
-    cursorWorldY = THREE.MathUtils.clamp(cursorWorldY, FLOOR_Y + 0.1, 1.48);
+    cursorWorldX = THREE.MathUtils.clamp(cursorWorldX, -3.2, 3.2);
+    cursorWorldY = THREE.MathUtils.clamp(cursorWorldY, FLOOR_Y + 0.08, 2.2);
 
     // Physical Claw-to-Base Pedestal Collision & Interaction
     // Prevents the claw from clipping into the base cabinet or turret collar
@@ -312,27 +319,41 @@ function IndustrialArmAndBlock({
     s.tipX = THREE.MathUtils.damp(s.tipX, cursorWorldX, 18, dt);
     s.tipY = THREE.MathUtils.damp(s.tipY, cursorWorldY, 18, dt);
 
-    const tipVelX = (s.tipX - s.prevTipX) / Math.max(dt, 0.001);
-    const tipVelY = (s.tipY - s.prevTipY) / Math.max(dt, 0.001);
+    const rawVelX = (s.tipX - s.prevTipX) / Math.max(dt, 0.001);
+    const rawVelY = (s.tipY - s.prevTipY) / Math.max(dt, 0.001);
+    s.smoothTipVelX = THREE.MathUtils.damp(s.smoothTipVelX, rawVelX, 16, dt);
+    s.smoothTipVelY = THREE.MathUtils.damp(s.smoothTipVelY, rawVelY, 16, dt);
 
     // 2. Smooth 3D Base Turret Rotation (Joint 1)
     const dx = s.tipX - shoulderX;
     const dy = s.tipY - shoulderY;
 
     const targetTurretAngle = Math.atan2(Z_PLANE, dx);
-    s.turretAngle = THREE.MathUtils.damp(s.turretAngle, targetTurretAngle, 14, dt);
+    s.turretAngle = THREE.MathUtils.damp(s.turretAngle, targetTurretAngle, 18, dt);
 
     const radialTipDist = Math.sqrt(dx * dx + Z_PLANE * Z_PLANE);
     const localTipR = radialTipDist;
     const localTipY = dy;
 
     // 3. Claw Orientation Pitch Angle (Joint 4)
-    const heightFactor = THREE.MathUtils.clamp((s.tipY - (FLOOR_Y + 0.25)) / 1.35, 0, 1);
-    const downwardPitch = -Math.PI * 0.49;
-    const highPitch = s.isGrippingBlock
-      ? -Math.PI * 0.46
-      : THREE.MathUtils.clamp(Math.atan2(localTipY, localTipR) * 0.5, -0.4, 0.35);
-    const desiredClawPitch = THREE.MathUtils.lerp(downwardPitch, highPitch, heightFactor);
+    // When holding the block: hold downward (-Math.PI * 0.48) to keep block upright.
+    // When not holding the block: smoothly follow cursor and point the claw in the direction of the cursor!
+    const cursorAngle = Math.atan2(localTipY, localTipR);
+    const heightAboveFloor = s.tipY - FLOOR_Y;
+    const floorBlend = THREE.MathUtils.clamp((heightAboveFloor - 0.22) / 0.45, 0, 1);
+
+    // Near floor, angle downward (-Math.PI * 0.48) to grab the block cleanly.
+    // In air, point directly in the direction of the cursor.
+    const freeTargetPitch = THREE.MathUtils.lerp(
+      -Math.PI * 0.48,
+      THREE.MathUtils.clamp(cursorAngle, -Math.PI * 0.48, 0.85),
+      floorBlend
+    );
+    const targetClawPitch = s.isGrippingBlock ? -Math.PI * 0.48 : freeTargetPitch;
+
+    if (s.clawPitch === undefined) s.clawPitch = targetClawPitch;
+    s.clawPitch = THREE.MathUtils.damp(s.clawPitch, targetClawPitch, 14, dt);
+    const desiredClawPitch = s.clawPitch;
 
     // 4. Back-calculate the Wrist Joint position from the Claw Pocket Center
     let wristR = localTipR - L_CLAW * Math.cos(desiredClawPitch);
@@ -370,11 +391,15 @@ function IndustrialArmAndBlock({
 
     const ikTheta1 = THREE.MathUtils.clamp(wristAngleBase + beta, 0.06, Math.PI - 0.06);
     const ikTheta2 = -(Math.PI - phi);
-    const ikWristAngle = desiredClawPitch - (ikTheta1 + ikTheta2);
+    const ikWristAngle = THREE.MathUtils.clamp(
+      desiredClawPitch - (ikTheta1 + ikTheta2),
+      -Math.PI * 0.85,
+      Math.PI * 0.85
+    );
 
-    s.theta1 = THREE.MathUtils.damp(s.theta1, ikTheta1, 20, dt);
-    s.theta2 = THREE.MathUtils.damp(s.theta2, ikTheta2, 20, dt);
-    s.wristAngle = THREE.MathUtils.damp(s.wristAngle, ikWristAngle, 20, dt);
+    s.theta1 = THREE.MathUtils.damp(s.theta1, ikTheta1, 22, dt);
+    s.theta2 = THREE.MathUtils.damp(s.theta2, ikTheta2, 22, dt);
+    s.wristAngle = THREE.MathUtils.damp(s.wristAngle, ikWristAngle, 22, dt);
 
     const fkWristR =
       L1 * Math.cos(s.theta1) + L2 * Math.cos(s.theta1 + s.theta2);
@@ -541,19 +566,21 @@ function IndustrialArmAndBlock({
       const GRAB_RADIUS = 0.32;
       if (wantClose && !s.isGrippingBlock && distToBlock < GRAB_RADIUS) {
         s.isGrippingBlock = true;
+        s.releaseGraceTimer = 0;
       } else if (!wantClose && s.isGrippingBlock) {
         s.isGrippingBlock = false;
-        s.blockVx = THREE.MathUtils.clamp(tipVelX * 0.65, -4.5, 4.5);
-        s.blockVy = THREE.MathUtils.clamp(tipVelY * 0.65, -3.5, 4.5);
-        s.blockAngularVel = THREE.MathUtils.clamp(-s.blockVx * 1.8, -6, 6);
+        s.releaseGraceTimer = 0.35;
+        s.blockVx = THREE.MathUtils.clamp(s.smoothTipVelX * 0.52, -3.2, 3.2);
+        s.blockVy = THREE.MathUtils.clamp(s.smoothTipVelY * 0.52, -2.5, 3.2);
+        s.blockAngularVel = THREE.MathUtils.clamp(-s.blockVx * 1.4, -4.5, 4.5);
       }
 
       if (s.isGrippingBlock) {
         // Lock the block directly into the claw pocket with zero positional lag so it NEVER clips through the fingers!
         s.blockX = actualTipWorldX;
         s.blockY = actualTipWorldY;
-        s.blockVx = tipVelX;
-        s.blockVy = tipVelY;
+        s.blockVx = s.smoothTipVelX;
+        s.blockVy = s.smoothTipVelY;
 
         // Match the turret Y rotation and claw pitch angle so the cube faces sit parallel to the inner finger pads
         s.blockRotY = -s.turretAngle;
@@ -578,7 +605,7 @@ function IndustrialArmAndBlock({
         const minSepX = BLOCK_HALF + 0.1;
         const minSepY = BLOCK_HALF + 0.09;
 
-        if (Math.abs(dxBlock) < minSepX && Math.abs(dyBlock) < minSepY) {
+        if (s.releaseGraceTimer <= 0 && Math.abs(dxBlock) < minSepX && Math.abs(dyBlock) < minSepY) {
           if (actualTipWorldY > s.blockY + BLOCK_HALF * 0.45) {
             // Claw pressing down on top of the block -> squish the block vertically
             s.squishY = THREE.MathUtils.damp(s.squishY, 0.82, 24, dt);
@@ -587,7 +614,7 @@ function IndustrialArmAndBlock({
             // Claw pushing against the left or right side of the block -> push block out of the claw's volume
             const pushSign = dxBlock >= 0 ? 1 : -1;
             s.blockX = actualTipWorldX + pushSign * minSepX;
-            s.blockVx = Math.max(Math.abs(tipVelX) * 0.75, 0.65) * pushSign;
+            s.blockVx = Math.max(Math.abs(s.smoothTipVelX) * 0.55, 0.4) * pushSign;
             s.squishX = THREE.MathUtils.damp(s.squishX, 0.86, 22, dt);
             s.squishY = THREE.MathUtils.damp(s.squishY, 1.08, 22, dt);
           }
@@ -1055,13 +1082,37 @@ export default function RoboticArmCanvas({
       }
     };
 
+    const handleTouchMove = (e) => {
+      if (e.touches && e.touches.length > 0) {
+        mouseScreenRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      }
+    };
+    const handleTouchStart = (e) => {
+      if (e.target.closest('a, button, input, textarea')) return;
+      if (e.touches && e.touches.length > 0) {
+        mouseScreenRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      }
+      isMouseDownRef.current = true;
+      downTimestampRef.current = performance.now();
+    };
+    const handleTouchEnd = () => {
+      isMouseDownRef.current = false;
+      gripToggleRef.current = false;
+    };
+
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchstart', handleTouchStart);
+    window.addEventListener('touchend', handleTouchEnd);
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
     };
   }, []);
 

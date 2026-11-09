@@ -80,7 +80,7 @@ export default function HeroSection() {
     <section
       id="hero"
       ref={sectionRef}
-      className="relative h-screen min-h-[700px] w-full bg-[#050506] overflow-hidden flex flex-col justify-between pt-16 select-none"
+      className="relative h-screen min-h-[480px] sm:min-h-[540px] max-h-screen w-full bg-[#050506] overflow-hidden flex flex-col justify-between pt-14 sm:pt-16 select-none"
     >
       {/* Background Atmospheric Glow & Hardware Grid */}
       <div className="absolute inset-0 hardware-grid-bg opacity-65 pointer-events-none" />
@@ -92,14 +92,14 @@ export default function HeroSection() {
         className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-white/[0.04] to-transparent border-t border-white/[0.08] pointer-events-none"
       />
 
-      {/* Right-Side Background Telemetry Info Boxes (Purely background at z-10 so the block and claw pass freely in front) */}
-      <div className="hidden lg:block absolute inset-0 z-10 pointer-events-none max-w-7xl mx-auto select-none">
+      {/* Right-Side Background Telemetry Info Boxes (Visible on tablets, laptops & desktop at z-20) */}
+      <div className="hidden md:block absolute inset-0 z-20 pointer-events-none max-w-7xl mx-auto select-none">
         <motion.div
           initial={{ opacity: 0, x: 24, y: 12 }}
           animate={{ opacity: 1, x: 0, y: 0 }}
           transition={{ duration: 0.85, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
           style={{ x: rightHudX, y: rightHudY, opacity: heroTextOpacity }}
-          className="absolute right-8 bottom-28 flex flex-col gap-3.5 w-72 pointer-events-none select-none"
+          className="absolute right-4 sm:right-6 md:right-8 bottom-16 sm:bottom-20 md:bottom-24 flex flex-col gap-2.5 sm:gap-3.5 w-60 md:w-72 pointer-events-none select-none"
         >
           {/* Background Info Box 1 */}
           <div className="p-4 bg-[#0d0d11]/85 border border-white/15 rounded relative select-none">
@@ -172,13 +172,13 @@ export default function HeroSection() {
         </motion.div>
       </div>
 
-      {/* 3D White/Gray Industrial Robotic Arm + Squishy Block + Physical Red Reset Button */}
+      {/* 3D White/Gray Industrial Robotic Arm + Squishy Block + Physical Red Reset Button (Rendered at z-30 ABOVE the Hero text) */}
       <motion.div
         initial={{ opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
         style={{ opacity: armOpacity, y: armY }}
-        className="absolute inset-0 z-20 pointer-events-none select-none"
+        className="absolute inset-0 z-30 pointer-events-none select-none"
       >
         <RoboticArmCanvas
           scrollOpenRef={scrollOpenRef}
@@ -187,8 +187,8 @@ export default function HeroSection() {
         />
       </motion.div>
 
-      {/* Main Hero Text Content */}
-      <div className="relative z-30 max-w-7xl mx-auto w-full px-6 pt-8 md:pt-12 flex-1 flex flex-col justify-between pointer-events-none select-none">
+      {/* Main Hero Text Content (Rendered at z-10 beneath the 3D robotic arm while preserving button clickability) */}
+      <div className="relative z-10 max-w-7xl mx-auto w-full px-6 pt-8 md:pt-12 flex-1 flex flex-col justify-between pointer-events-none select-none">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           <motion.div
             initial={{ opacity: 0, y: 22 }}

@@ -214,7 +214,7 @@
             'Hardware-inspired split-flap board animations with synchronized sound cues.',
             'Custom JSON survey pack support for rapid game customization and live audience play.',
           ],
-          repoUrl: 'https://github.com/matthewchongg/friendly-feud',
+          repoUrl: 'https://matthewchongg.github.io/friendly-feud/',
           githubUrl: 'https://github.com/matthewchongg/friendly-feud',
         },
         {
@@ -559,6 +559,8 @@
           tipY: -0.25,
           prevTipX: -0.65,
           prevTipY: -0.25,
+          smoothTipVelX: 0,
+          smoothTipVelY: 0,
           turretAngle: Math.PI * 0.85,
           theta1: 1.35,
           theta2: -1.1,
@@ -572,6 +574,8 @@
           blockRotZ: 0,
           blockAngularVel: 0,
           isGrippingBlock: false,
+          releaseGraceTimer: 0,
+          clawPitch: -Math.PI * 0.48,
           supportSurfaceY: FLOOR_Y,
           squishX: 1,
           squishY: 1,
@@ -650,6 +654,9 @@
           if (s.buttonCooldown > 0) {
             s.buttonCooldown = Math.max(0, s.buttonCooldown - dt);
           }
+          if (s.releaseGraceTimer > 0) {
+            s.releaseGraceTimer = Math.max(0, s.releaseGraceTimer - dt);
+          }
 
           const camZ = state.camera.position.z || 4.6;
           const depthScale = (camZ - Z_PLANE) / camZ;
@@ -681,8 +688,8 @@
           const shoulderX = BASE_X;
           const shoulderY = BASE_Y + SHOULDER_OFFSET_Y;
 
-          cursorWorldX = THREE.MathUtils.clamp(cursorWorldX, -2.15, 2.25);
-          cursorWorldY = THREE.MathUtils.clamp(cursorWorldY, FLOOR_Y + 0.1, 1.48);
+          cursorWorldX = THREE.MathUtils.clamp(cursorWorldX, -3.2, 3.2);
+          cursorWorldY = THREE.MathUtils.clamp(cursorWorldY, FLOOR_Y + 0.08, 2.2);
 
           // Physical Claw-to-Base Pedestal Collision & Interaction
           const pedCabinetHalfW = 0.64;
@@ -729,25 +736,40 @@
           s.tipX = THREE.MathUtils.damp(s.tipX, cursorWorldX, 18, dt);
           s.tipY = THREE.MathUtils.damp(s.tipY, cursorWorldY, 18, dt);
 
-          const tipVelX = (s.tipX - s.prevTipX) / Math.max(dt, 0.001);
-          const tipVelY = (s.tipY - s.prevTipY) / Math.max(dt, 0.001);
+          const rawVelX = (s.tipX - s.prevTipX) / Math.max(dt, 0.001);
+          const rawVelY = (s.tipY - s.prevTipY) / Math.max(dt, 0.001);
+          s.smoothTipVelX = THREE.MathUtils.damp(s.smoothTipVelX, rawVelX, 16, dt);
+          s.smoothTipVelY = THREE.MathUtils.damp(s.smoothTipVelY, rawVelY, 16, dt);
 
           const dx = s.tipX - shoulderX;
           const dy = s.tipY - shoulderY;
 
           const targetTurretAngle = Math.atan2(Z_PLANE, dx);
-          s.turretAngle = THREE.MathUtils.damp(s.turretAngle, targetTurretAngle, 14, dt);
+          s.turretAngle = THREE.MathUtils.damp(s.turretAngle, targetTurretAngle, 18, dt);
 
           const radialTipDist = Math.sqrt(dx * dx + Z_PLANE * Z_PLANE);
           const localTipR = radialTipDist;
           const localTipY = dy;
 
-          const heightFactor = THREE.MathUtils.clamp((s.tipY - (FLOOR_Y + 0.25)) / 1.35, 0, 1);
-          const downwardPitch = -Math.PI * 0.49;
-          const highPitch = s.isGrippingBlock
-            ? -Math.PI * 0.46
-            : THREE.MathUtils.clamp(Math.atan2(localTipY, localTipR) * 0.5, -0.4, 0.35);
-          const desiredClawPitch = THREE.MathUtils.lerp(downwardPitch, highPitch, heightFactor);
+          // 3. Claw Orientation Pitch Angle (Joint 4)
+          // When holding the block: hold downward (-Math.PI * 0.48) to keep block upright.
+          // When not holding the block: smoothly follow cursor and point the claw in the direction of the cursor!
+          const cursorAngle = Math.atan2(localTipY, localTipR);
+          const heightAboveFloor = s.tipY - FLOOR_Y;
+          const floorBlend = THREE.MathUtils.clamp((heightAboveFloor - 0.22) / 0.45, 0, 1);
+
+          // Near floor, angle downward (-Math.PI * 0.48) to grab the block cleanly.
+          // In air, point directly in the direction of the cursor.
+          const freeTargetPitch = THREE.MathUtils.lerp(
+            -Math.PI * 0.48,
+            THREE.MathUtils.clamp(cursorAngle, -Math.PI * 0.48, 0.85),
+            floorBlend
+          );
+          const targetClawPitch = s.isGrippingBlock ? -Math.PI * 0.48 : freeTargetPitch;
+
+          if (s.clawPitch === undefined) s.clawPitch = targetClawPitch;
+          s.clawPitch = THREE.MathUtils.damp(s.clawPitch, targetClawPitch, 14, dt);
+          const desiredClawPitch = s.clawPitch;
 
           let wristR = localTipR - L_CLAW * Math.cos(desiredClawPitch);
           let wristY = localTipY - L_CLAW * Math.sin(desiredClawPitch);
@@ -782,11 +804,15 @@
 
           const ikTheta1 = THREE.MathUtils.clamp(wristAngleBase + beta, 0.06, Math.PI - 0.06);
           const ikTheta2 = -(Math.PI - phi);
-          const ikWristAngle = desiredClawPitch - (ikTheta1 + ikTheta2);
+          const ikWristAngle = THREE.MathUtils.clamp(
+            desiredClawPitch - (ikTheta1 + ikTheta2),
+            -Math.PI * 0.85,
+            Math.PI * 0.85
+          );
 
-          s.theta1 = THREE.MathUtils.damp(s.theta1, ikTheta1, 20, dt);
-          s.theta2 = THREE.MathUtils.damp(s.theta2, ikTheta2, 20, dt);
-          s.wristAngle = THREE.MathUtils.damp(s.wristAngle, ikWristAngle, 20, dt);
+          s.theta1 = THREE.MathUtils.damp(s.theta1, ikTheta1, 22, dt);
+          s.theta2 = THREE.MathUtils.damp(s.theta2, ikTheta2, 22, dt);
+          s.wristAngle = THREE.MathUtils.damp(s.wristAngle, ikWristAngle, 22, dt);
 
           const fkWristR = L1 * Math.cos(s.theta1) + L2 * Math.cos(s.theta1 + s.theta2);
           const fkWristY = L1 * Math.sin(s.theta1) + L2 * Math.sin(s.theta1 + s.theta2);
@@ -940,19 +966,22 @@
             const GRAB_RADIUS = 0.32;
             if (wantClose && !s.isGrippingBlock && distToBlock < GRAB_RADIUS) {
               s.isGrippingBlock = true;
+              s.releaseGraceTimer = 0;
             } else if (!wantClose && s.isGrippingBlock) {
               s.isGrippingBlock = false;
-              s.blockVx = THREE.MathUtils.clamp(tipVelX * 0.65, -4.5, 4.5);
-              s.blockVy = THREE.MathUtils.clamp(tipVelY * 0.65, -3.5, 4.5);
-              s.blockAngularVel = THREE.MathUtils.clamp(-s.blockVx * 1.8, -6, 6);
+              // Grace window prevents the claw-to-block collider from kicking the block sideways while releasing
+              s.releaseGraceTimer = 0.35;
+              s.blockVx = THREE.MathUtils.clamp(s.smoothTipVelX * 0.52, -3.2, 3.2);
+              s.blockVy = THREE.MathUtils.clamp(s.smoothTipVelY * 0.52, -2.5, 3.2);
+              s.blockAngularVel = THREE.MathUtils.clamp(-s.blockVx * 1.4, -4.5, 4.5);
             }
 
             if (s.isGrippingBlock) {
               // Lock the block directly into the claw pocket with zero positional lag so it NEVER clips through the fingers
               s.blockX = actualTipWorldX;
               s.blockY = actualTipWorldY;
-              s.blockVx = tipVelX;
-              s.blockVy = tipVelY;
+              s.blockVx = s.smoothTipVelX;
+              s.blockVy = s.smoothTipVelY;
 
               s.blockRotY = -s.turretAngle;
               s.blockRotZ = fkTotalAngle + Math.PI * 0.5;
@@ -969,22 +998,29 @@
               s.blockRotZ += s.blockAngularVel * dt;
               s.supportSurfaceY = FLOOR_Y;
 
-              // Solid Claw-to-Block Contact Resolution (prevents the box from clipping through the claw when free)
-              const dxBlock = s.blockX - actualTipWorldX;
-              const dyBlock = s.blockY - actualTipWorldY;
-              const minSepX = BLOCK_HALF + 0.1;
-              const minSepY = BLOCK_HALF + 0.09;
+              // Only apply gentle side nudge when outside the post-release grace window
+              if (s.releaseGraceTimer <= 0) {
+                const dxBlock = s.blockX - actualTipWorldX;
+                const dyBlock = s.blockY - actualTipWorldY;
+                const minSepX = BLOCK_HALF + 0.095;
+                const minSepY = BLOCK_HALF + 0.085;
 
-              if (Math.abs(dxBlock) < minSepX && Math.abs(dyBlock) < minSepY) {
-                if (actualTipWorldY > s.blockY + BLOCK_HALF * 0.45) {
-                  s.squishY = THREE.MathUtils.damp(s.squishY, 0.82, 24, dt);
-                  s.squishX = THREE.MathUtils.damp(s.squishX, 1.14, 24, dt);
-                } else {
-                  const pushSign = dxBlock >= 0 ? 1 : -1;
-                  s.blockX = actualTipWorldX + pushSign * minSepX;
-                  s.blockVx = Math.max(Math.abs(tipVelX) * 0.75, 0.65) * pushSign;
-                  s.squishX = THREE.MathUtils.damp(s.squishX, 0.86, 22, dt);
-                  s.squishY = THREE.MathUtils.damp(s.squishY, 1.08, 22, dt);
+                if (Math.abs(dxBlock) < minSepX && Math.abs(dyBlock) < minSepY) {
+                  if (actualTipWorldY > s.blockY + BLOCK_HALF * 0.35) {
+                    s.squishY = THREE.MathUtils.damp(s.squishY, 0.84, 20, dt);
+                    s.squishX = THREE.MathUtils.damp(s.squishX, 1.12, 20, dt);
+                  } else {
+                    const pushSign = dxBlock >= 0 ? 1 : -1;
+                    const overlap = minSepX - Math.abs(dxBlock);
+                    s.blockX += pushSign * overlap * 0.5;
+                    s.blockVx = THREE.MathUtils.clamp(
+                      s.blockVx + pushSign * 2.2 * dt,
+                      -2.2,
+                      2.2
+                    );
+                    s.squishX = THREE.MathUtils.damp(s.squishX, 0.88, 20, dt);
+                    s.squishY = THREE.MathUtils.damp(s.squishY, 1.06, 20, dt);
+                  }
                 }
               }
 
@@ -1686,11 +1722,18 @@
         const clawStateNodeRef = useRef(null);
         const blockStatusNodeRef = useRef(null);
 
+        const TOTAL_ITEMS = PROJECTS_DATA.length;
         const [hoveredProject, setHoveredProject] = useState(null);
         const [hoveredSlotIndex, setHoveredSlotIndex] = useState(null);
         const [selectedProject, setSelectedProject] = useState(null);
         const [startIndex, setStartIndex] = useState(0);
         const [visibleCount, setVisibleCount] = useState(4);
+        const [isJumping, setIsJumping] = useState(false);
+        const lastInteractionRef = useRef(0);
+
+        const recordInteraction = () => {
+          lastInteractionRef.current = Date.now();
+        };
 
         const [name, setName] = useState('');
         const [email, setEmail] = useState('');
@@ -1702,29 +1745,68 @@
             const w = window.innerWidth;
             const count = w >= 1200 ? 4 : w >= 900 ? 3 : w >= 640 ? 2 : 1;
             setVisibleCount(count);
-            setStartIndex((prev) =>
-              Math.min(prev, Math.max(0, PROJECTS_DATA.length - count))
-            );
           };
           updateVisibleCount();
           window.addEventListener('resize', updateVisibleCount);
           return () => window.removeEventListener('resize', updateVisibleCount);
         }, []);
 
-        const maxStartIndex = Math.max(0, PROJECTS_DATA.length - visibleCount);
-        const canPanLeft = startIndex > 0;
-        const canPanRight = startIndex < maxStartIndex;
+        // When smoothly sliding into the cloned cards at index TOTAL_ITEMS, silently jump back to index 0
+        useEffect(() => {
+          if (startIndex >= TOTAL_ITEMS) {
+            const resetTimer = setTimeout(() => {
+              setIsJumping(true);
+              setStartIndex(0);
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  setIsJumping(false);
+                });
+              });
+            }, 550);
+            return () => clearTimeout(resetTimer);
+          }
+        }, [startIndex, TOTAL_ITEMS]);
+
+        // Automatic horizontal scrolling:
+        // If user interacts (clicks arrows, hovers cards, etc.), do NOT move until 5 seconds of idle have passed
+        useEffect(() => {
+          if (selectedProject) return;
+
+          const intervalId = window.setInterval(() => {
+            const elapsed = Date.now() - lastInteractionRef.current;
+            if (elapsed < 5000) return; // 5 seconds interaction pause
+
+            setHoveredProject(null);
+            setHoveredSlotIndex(null);
+            setStartIndex((prev) => prev + 1);
+          }, 3200);
+
+          return () => window.clearInterval(intervalId);
+        }, [selectedProject, TOTAL_ITEMS]);
 
         const handlePanLeft = () => {
+          recordInteraction();
           setHoveredProject(null);
           setHoveredSlotIndex(null);
-          setStartIndex((prev) => Math.max(0, prev - 1));
+          if (startIndex === 0) {
+            setIsJumping(true);
+            setStartIndex(TOTAL_ITEMS);
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                setIsJumping(false);
+                setStartIndex(TOTAL_ITEMS - 1);
+              });
+            });
+          } else {
+            setStartIndex((prev) => prev - 1);
+          }
         };
 
         const handlePanRight = () => {
+          recordInteraction();
           setHoveredProject(null);
           setHoveredSlotIndex(null);
-          setStartIndex((prev) => Math.min(maxStartIndex, prev + 1));
+          setStartIndex((prev) => prev + 1);
         };
 
         useEffect(() => {
@@ -1775,13 +1857,37 @@
             }
           };
 
+          const handleTouchMove = (e) => {
+            if (e.touches && e.touches.length > 0) {
+              mouseScreenRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+          };
+          const handleTouchStart = (e) => {
+            if (e.target.closest('a, button, input, textarea')) return;
+            if (e.touches && e.touches.length > 0) {
+              mouseScreenRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+            isMouseDownRef.current = true;
+            downTimestampRef.current = performance.now();
+          };
+          const handleTouchEnd = () => {
+            isMouseDownRef.current = false;
+            gripToggleRef.current = false;
+          };
+
           window.addEventListener('mousemove', handleMouseMove, { passive: true });
           window.addEventListener('mousedown', handleMouseDown);
           window.addEventListener('mouseup', handleMouseUp);
+          window.addEventListener('touchmove', handleTouchMove, { passive: true });
+          window.addEventListener('touchstart', handleTouchStart);
+          window.addEventListener('touchend', handleTouchEnd);
           return () => {
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mousedown', handleMouseDown);
             window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('touchmove', handleTouchMove);
+            window.removeEventListener('touchstart', handleTouchStart);
+            window.removeEventListener('touchend', handleTouchEnd);
           };
         }, []);
 
@@ -1832,23 +1938,28 @@
         };
 
         const handleCardHoverStart = (project, slotIdx) => {
+          recordInteraction();
           setHoveredProject(project);
           setHoveredSlotIndex(slotIdx);
           alignProjectsViewport();
         };
 
         const handleCardHoverEnd = () => {
+          recordInteraction();
           setHoveredProject(null);
           setHoveredSlotIndex(null);
         };
 
         const spotlightLeft = hoveredSlotIndex !== null ? `${18 + hoveredSlotIndex * 21}%` : '50%';
         const deckWidthPx = visibleCount * 285 + (visibleCount - 1) * 20;
-        const startLabel = String(startIndex + 1).padStart(2, '0');
+        const realCurrentIndex = startIndex % TOTAL_ITEMS;
+        const startLabel = String(realCurrentIndex + 1).padStart(2, '0');
         const endLabel = String(
-          Math.min(PROJECTS_DATA.length, startIndex + visibleCount)
+          ((realCurrentIndex + visibleCount - 1) % TOTAL_ITEMS) + 1
         ).padStart(2, '0');
-        const totalLabel = String(PROJECTS_DATA.length).padStart(2, '0');
+        const totalLabel = String(TOTAL_ITEMS).padStart(2, '0');
+
+        const displayList = [...PROJECTS_DATA, ...PROJECTS_DATA.slice(0, visibleCount)];
 
         const handleFormSubmit = (e) => {
           e.preventDefault();
@@ -1858,7 +1969,7 @@
           const body = encodeURIComponent(
             `Name: ${name.trim()}\nEmail: ${email.trim()}\n\nMessage:\n${message.trim()}`
           );
-          window.location.href = `mailto:matthewchong.dev@gmail.com?subject=${subject}&body=${body}`;
+          window.location.href = `mailto:matthew.chong.dev@gmail.com?subject=${subject}&body=${body}`;
           setTimeout(() => {
             setStatus('SENT');
             setName('');
@@ -1919,7 +2030,7 @@
             <section
               id="hero"
               ref={heroSectionRef}
-              className="relative h-screen min-h-[700px] w-full bg-[#050506] overflow-hidden flex flex-col justify-between pt-16 select-none"
+              className="relative h-screen min-h-[480px] sm:min-h-[540px] max-h-screen w-full bg-[#050506] overflow-hidden flex flex-col justify-between pt-14 sm:pt-16 select-none"
             >
               <div className="absolute inset-0 hardware-grid-bg opacity-65 pointer-events-none" />
               <div className="absolute inset-0 atmospheric-glow pointer-events-none" />
@@ -1930,14 +2041,14 @@
                 className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-white/[0.04] to-transparent border-t border-white/[0.08] pointer-events-none"
               />
 
-              {/* Right-Side Background Telemetry Info Boxes (Purely background at z-10) */}
-              <div className="hidden lg:block absolute inset-0 z-10 pointer-events-none max-w-7xl mx-auto select-none">
+              {/* Right-Side Background Telemetry Info Boxes (Visible on tablets, laptops & desktop at z-20) */}
+              <div className="hidden md:block absolute inset-0 z-20 pointer-events-none max-w-7xl mx-auto select-none">
                 <motion.div
                   initial={{ opacity: 0, x: 24, y: 12 }}
                   animate={{ opacity: 1, x: 0, y: 0 }}
                   transition={{ duration: 0.85, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
                   style={{ x: rightHudX, y: rightHudY, opacity: heroTextOpacity }}
-                  className="absolute right-8 bottom-28 flex flex-col gap-3.5 w-72 pointer-events-none select-none"
+                  className="absolute right-4 sm:right-6 md:right-8 bottom-16 sm:bottom-20 md:bottom-24 flex flex-col gap-2.5 sm:gap-3.5 w-60 md:w-72 pointer-events-none select-none"
                 >
                   <div className="p-4 bg-[#0d0d11]/85 border border-white/15 rounded relative select-none">
                     <span className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t border-l border-white/55" />
@@ -2001,13 +2112,13 @@
                 </motion.div>
               </div>
 
-              {/* 3D Robotic Arm + Squishy Physics Block + Physical Red Reset Button Canvas */}
+              {/* 3D Robotic Arm + Squishy Physics Block + Physical Red Reset Button Canvas (Rendered at z-30 ABOVE the Hero text) */}
               <motion.div
                 initial={{ opacity: 0, scale: 0.97 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
                 style={{ opacity: armOpacity, y: armY }}
-                className="absolute inset-0 z-20 pointer-events-none select-none"
+                className="absolute inset-0 z-30 pointer-events-none select-none"
               >
                 <Canvas
                   camera={{ position: [0, 0, 4.6], fov: 38 }}
@@ -2029,8 +2140,8 @@
                 </Canvas>
               </motion.div>
 
-              {/* Hero Text Content */}
-              <div className="relative z-30 max-w-7xl mx-auto w-full px-6 pt-8 md:pt-12 flex-1 flex flex-col justify-between pointer-events-none select-none">
+              {/* Hero Text Content (Rendered at z-10 beneath the 3D robotic arm while preserving button clickability) */}
+              <div className="relative z-10 max-w-7xl mx-auto w-full px-6 pt-8 md:pt-12 flex-1 flex flex-col justify-between pointer-events-none select-none">
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                   <motion.div
                     initial={{ opacity: 0, y: 22 }}
@@ -2122,26 +2233,16 @@
                       <button
                         type="button"
                         onClick={handlePanLeft}
-                        disabled={!canPanLeft}
                         aria-label="Previous project module"
-                        className={`w-10 h-10 rounded-xl border flex items-center justify-center font-mono text-sm transition-all ${
-                          canPanLeft
-                            ? 'bg-[#101014] border-white/25 text-white hover:bg-white hover:text-black shadow-[0_0_20px_rgba(255,255,255,0.12)] cursor-pointer'
-                            : 'bg-[#0a0a0d] border-white/10 text-zinc-600 cursor-not-allowed'
-                        }`}
+                        className="w-10 h-10 rounded-xl border flex items-center justify-center font-mono text-sm transition-all bg-[#101014] border-white/25 text-white hover:bg-white hover:text-black shadow-[0_0_20px_rgba(255,255,255,0.12)] cursor-pointer"
                       >
                         ←
                       </button>
                       <button
                         type="button"
                         onClick={handlePanRight}
-                        disabled={!canPanRight}
                         aria-label="Next project module"
-                        className={`w-10 h-10 rounded-xl border flex items-center justify-center font-mono text-sm transition-all ${
-                          canPanRight
-                            ? 'bg-[#101014] border-white/25 text-white hover:bg-white hover:text-black shadow-[0_0_20px_rgba(255,255,255,0.12)] cursor-pointer'
-                            : 'bg-[#0a0a0d] border-white/10 text-zinc-600 cursor-not-allowed'
-                        }`}
+                        className="w-10 h-10 rounded-xl border flex items-center justify-center font-mono text-sm transition-all bg-[#101014] border-white/25 text-white hover:bg-white hover:text-black shadow-[0_0_20px_rgba(255,255,255,0.12)] cursor-pointer"
                       >
                         →
                       </button>
@@ -2150,21 +2251,23 @@
                 </div>
 
                 {/* 3D Perspective Horizontal Panning Track + Side Left/Right Arrow Buttons */}
-                <div className="relative flex items-center justify-center">
+                <div
+                  onMouseMove={recordInteraction}
+                  onTouchStart={recordInteraction}
+                  onTouchMove={recordInteraction}
+                  className="relative flex items-center justify-center"
+                >
+                  {/* Left Side Arrow Button */}
                   <button
                     type="button"
                     onClick={handlePanLeft}
-                    disabled={!canPanLeft}
                     aria-label="Pan projects left"
-                    className={`hidden sm:flex absolute left-0 xl:-left-5 z-40 w-11 h-11 rounded-full border items-center justify-center font-mono text-base transition-all ${
-                      canPanLeft
-                        ? 'bg-[#101014]/95 border-white/30 text-white hover:bg-white hover:text-black hover:scale-105 shadow-[0_10px_28px_rgba(0,0,0,0.85)] cursor-pointer'
-                        : 'bg-[#09090c]/70 border-white/10 text-zinc-600 opacity-50 cursor-not-allowed'
-                    }`}
+                    className="hidden sm:flex absolute left-0 xl:-left-5 z-40 w-11 h-11 rounded-full border items-center justify-center font-mono text-base transition-all bg-[#101014]/95 border-white/30 text-white hover:bg-white hover:text-black hover:scale-105 shadow-[0_10px_28px_rgba(0,0,0,0.85)] cursor-pointer"
                   >
                     ←
                   </button>
 
+                  {/* Centered Deck Window (No overflow-y clipping so the robotic arm limb extends freely to the top!) */}
                   <div
                     className="relative pt-6 pb-6 mx-auto"
                     style={{
@@ -2175,40 +2278,46 @@
                   >
                     <motion.div
                       animate={{ x: -startIndex * CARD_STEP_PX }}
-                      transition={{ type: 'spring', stiffness: 210, damping: 28, mass: 0.75 }}
+                      transition={
+                        isJumping
+                          ? { duration: 0 }
+                          : { type: 'spring', stiffness: 210, damping: 28, mass: 0.75 }
+                      }
                       className="flex items-center gap-5"
                     >
-                      {PROJECTS_DATA.map((project, index) => {
+                      {displayList.map((project, index) => {
                         const slotIndex = index - startIndex;
                         const isVisibleSlot =
                           slotIndex >= 0 && slotIndex < visibleCount;
                         return (
                           <ProjectCard
-                            key={project.id}
+                            key={`${project.id}-slot-${index}`}
                             project={project}
-                            index={index}
+                            index={index % TOTAL_ITEMS}
                             slotIndex={slotIndex}
                             isVisibleSlot={isVisibleSlot}
-                            isHovered={hoveredProject?.id === project.id}
+                            isHovered={
+                              hoveredProject?.id === project.id &&
+                              hoveredSlotIndex === slotIndex
+                            }
                             onHoverStart={handleCardHoverStart}
                             onHoverEnd={handleCardHoverEnd}
-                            onGrabSelect={(p) => setSelectedProject(p)}
+                            onGrabSelect={(p) => {
+                              recordInteraction();
+                              setSelectedProject(p);
+                            }}
                           />
                         );
                       })}
                     </motion.div>
                   </div>
 
+                  {/* Right Side Arrow Button */}
                   <button
                     type="button"
                     onClick={handlePanRight}
-                    disabled={!canPanRight}
                     aria-label="Pan projects right"
-                    className={`hidden sm:flex absolute right-0 xl:-right-5 z-40 w-11 h-11 rounded-full border items-center justify-center font-mono text-base transition-all ${
-                      canPanRight
-                        ? 'bg-[#101014]/95 border-white/30 text-white hover:bg-white hover:text-black hover:scale-105 shadow-[0_10px_28px_rgba(0,0,0,0.85)] cursor-pointer'
-                        : 'bg-[#09090c]/70 border-white/10 text-zinc-600 opacity-50 cursor-not-allowed'
-                    }`}
+                    className="hidden sm:flex absolute right-0 xl:-right-5 z-40 w-11 h-11 rounded-full border items-center justify-center font-mono text-base transition-all bg-[#101014]/95 border-white/30 text-white hover:bg-white hover:text-black hover:scale-105 shadow-[0_10px_28px_rgba(0,0,0,0.85)] cursor-pointer"
                   >
                     →
                   </button>
@@ -2216,18 +2325,19 @@
 
                 {/* Bottom Pan Progress Dots */}
                 <div className="mt-4 flex items-center justify-center gap-2">
-                  {Array.from({ length: maxStartIndex + 1 }).map((_, idx) => (
+                  {Array.from({ length: TOTAL_ITEMS }).map((_, idx) => (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => {
+                        recordInteraction();
                         setHoveredProject(null);
                         setHoveredSlotIndex(null);
                         setStartIndex(idx);
                       }}
-                      aria-label={`Go to project group ${idx + 1}`}
+                      aria-label={`Go to project module ${idx + 1}`}
                       className={`h-1.5 rounded-full transition-all cursor-pointer ${
-                        startIndex === idx
+                        realCurrentIndex === idx
                           ? 'w-7 bg-white'
                           : 'w-2 bg-white/20 hover:bg-white/45'
                       }`}
@@ -2367,15 +2477,7 @@
                           </div>
                         </div>
 
-                        <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedProject(null)}
-                            className="px-4 py-2.5 rounded-full bg-white/[0.06] hover:bg-white/15 border border-white/15 font-mono text-xs text-zinc-300 transition-colors"
-                          >
-                            RELEASE GRIP [ESC]
-                          </button>
-
+                        <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-end gap-3">
                           <div className="flex flex-wrap items-center gap-3">
                             {selectedProject.githubUrl &&
                               selectedProject.githubUrl !== selectedProject.repoUrl && (
@@ -2470,7 +2572,7 @@
                         </a>
 
                         <a
-                          href="mailto:matthewchong.dev@gmail.com"
+                          href="mailto:matthew.chong.dev@gmail.com"
                           className="group flex items-center justify-between p-4 rounded-xl bg-charcoal-900/80 border border-white/10 hover:border-white/40 transition-all"
                         >
                           <div className="flex items-center gap-3.5">
@@ -2479,7 +2581,7 @@
                             </div>
                             <div>
                               <div className="font-display text-sm font-medium text-white">Electronic Mail</div>
-                              <div className="font-mono text-xs text-zinc-500">matthewchong.dev@gmail.com</div>
+                              <div className="font-mono text-xs text-zinc-500">matthew.chong.dev@gmail.com</div>
                             </div>
                           </div>
                           <ArrowUpRightIcon className="w-4 h-4 text-zinc-500 group-hover:text-white" />
@@ -2493,7 +2595,7 @@
                       <div>
                         <h3 className="font-display text-xl font-semibold text-white uppercase">Contact Form</h3>
                         <p className="font-mono text-xs text-zinc-500 mt-0.5">
-                          PACKET_TRANSMISSION // matthewchong.dev@gmail.com
+                          PACKET_TRANSMISSION // matthew.chong.dev@gmail.com
                         </p>
                       </div>
                       <span className="font-mono text-[11px] px-2.5 py-1 rounded bg-white/[0.06] border border-white/10 text-zinc-300">
@@ -2576,7 +2678,7 @@
                     <a href="https://linkedin.com/in/matthew" target="_blank" rel="noopener noreferrer" className="text-zinc-400 hover:text-white">
                       <LinkedInIcon className="w-4 h-4" />
                     </a>
-                    <a href="mailto:matthewchong.dev@gmail.com" className="text-zinc-400 hover:text-white">
+                    <a href="mailto:matthew.chong.dev@gmail.com" className="text-zinc-400 hover:text-white">
                       <EmailIcon className="w-4 h-4" />
                     </a>
                   </div>

@@ -159,16 +159,8 @@ export default function ProjectModal({ selectedProject, onClose }) {
                 </div>
               </div>
 
-              {/* Modal Footer CTA Buttons ("Learn More" + Release Grip) */}
-              <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2.5 rounded-full bg-white/[0.06] hover:bg-white/15 border border-white/15 font-mono text-xs text-zinc-300 transition-colors"
-                >
-                  RELEASE GRIP [ESC]
-                </button>
-
+              {/* Modal Footer CTA Buttons ("Learn More" + GitHub) */}
+              <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-end gap-3">
                 <div className="flex flex-wrap items-center gap-3">
                   {selectedProject.githubUrl &&
                     selectedProject.githubUrl !== selectedProject.repoUrl && (

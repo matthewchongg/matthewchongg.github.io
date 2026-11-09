@@ -5,44 +5,91 @@ import ProjectCard from './ProjectCard';
 import ProjectModal from './ProjectModal';
 
 const CARD_STEP_PX = 305; // 285px card width + 20px gap
+const TOTAL_ITEMS = PROJECTS_DATA.length;
 
 export default function ProjectsSection({ onActiveCardChange }) {
   const sectionRef = useRef(null);
   const lastAutoScrollTimeRef = useRef(0);
+  const lastInteractionRef = useRef(0);
   const [hoveredProject, setHoveredProject] = useState(null);
   const [hoveredSlotIndex, setHoveredSlotIndex] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
   const [startIndex, setStartIndex] = useState(0);
   const [visibleCount, setVisibleCount] = useState(4);
+  const [isJumping, setIsJumping] = useState(false);
+
+  const recordInteraction = () => {
+    lastInteractionRef.current = Date.now();
+  };
 
   useEffect(() => {
     const updateVisibleCount = () => {
       const w = window.innerWidth;
       const count = w >= 1200 ? 4 : w >= 900 ? 3 : w >= 640 ? 2 : 1;
       setVisibleCount(count);
-      setStartIndex((prev) =>
-        Math.min(prev, Math.max(0, PROJECTS_DATA.length - count))
-      );
     };
     updateVisibleCount();
     window.addEventListener('resize', updateVisibleCount);
     return () => window.removeEventListener('resize', updateVisibleCount);
   }, []);
 
-  const maxStartIndex = Math.max(0, PROJECTS_DATA.length - visibleCount);
-  const canPanLeft = startIndex > 0;
-  const canPanRight = startIndex < maxStartIndex;
+  // When smoothly sliding into the cloned cards at index TOTAL_ITEMS, silently jump back to index 0
+  useEffect(() => {
+    if (startIndex >= TOTAL_ITEMS) {
+      const resetTimer = setTimeout(() => {
+        setIsJumping(true);
+        setStartIndex(0);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setIsJumping(false);
+          });
+        });
+      }, 550);
+      return () => clearTimeout(resetTimer);
+    }
+  }, [startIndex]);
+
+  // Automatic horizontal scrolling:
+  // If user interacts (clicks arrows, hovers cards, etc.), do NOT move until 5 seconds of idle have passed
+  useEffect(() => {
+    if (selectedProject) return;
+
+    const intervalId = window.setInterval(() => {
+      const elapsed = Date.now() - lastInteractionRef.current;
+      if (elapsed < 5000) return; // 5 seconds interaction pause
+
+      setHoveredProject(null);
+      setHoveredSlotIndex(null);
+      setStartIndex((prev) => prev + 1);
+    }, 3200);
+
+    return () => window.clearInterval(intervalId);
+  }, [selectedProject]);
 
   const handlePanLeft = () => {
+    recordInteraction();
     setHoveredProject(null);
     setHoveredSlotIndex(null);
-    setStartIndex((prev) => Math.max(0, prev - 1));
+    if (startIndex === 0) {
+      // Instantly jump to TOTAL_ITEMS (identical view) without transition, then slide left to TOTAL_ITEMS - 1
+      setIsJumping(true);
+      setStartIndex(TOTAL_ITEMS);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setIsJumping(false);
+          setStartIndex(TOTAL_ITEMS - 1);
+        });
+      });
+    } else {
+      setStartIndex((prev) => prev - 1);
+    }
   };
 
   const handlePanRight = () => {
+    recordInteraction();
     setHoveredProject(null);
     setHoveredSlotIndex(null);
-    setStartIndex((prev) => Math.min(maxStartIndex, prev + 1));
+    setStartIndex((prev) => prev + 1);
   };
 
   const alignProjectsViewport = () => {
@@ -57,6 +104,7 @@ export default function ProjectsSection({ onActiveCardChange }) {
   };
 
   const handleHoverStart = (project, slotIdx) => {
+    recordInteraction();
     setHoveredProject(project);
     setHoveredSlotIndex(slotIdx);
     onActiveCardChange?.(project);
@@ -64,6 +112,7 @@ export default function ProjectsSection({ onActiveCardChange }) {
   };
 
   const handleHoverEnd = () => {
+    recordInteraction();
     setHoveredProject(null);
     setHoveredSlotIndex(null);
     if (!selectedProject) {
@@ -72,11 +121,13 @@ export default function ProjectsSection({ onActiveCardChange }) {
   };
 
   const handleGrabSelect = (project) => {
+    recordInteraction();
     setSelectedProject(project);
     onActiveCardChange?.(project);
   };
 
   const handleCloseModal = () => {
+    recordInteraction();
     setSelectedProject(null);
     onActiveCardChange?.(null);
   };
@@ -85,11 +136,15 @@ export default function ProjectsSection({ onActiveCardChange }) {
     hoveredSlotIndex !== null ? `${18 + hoveredSlotIndex * 21}%` : '50%';
 
   const deckWidthPx = visibleCount * 285 + (visibleCount - 1) * 20;
-  const startLabel = String(startIndex + 1).padStart(2, '0');
+  const realCurrentIndex = startIndex % TOTAL_ITEMS;
+  const startLabel = String(realCurrentIndex + 1).padStart(2, '0');
   const endLabel = String(
-    Math.min(PROJECTS_DATA.length, startIndex + visibleCount)
+    ((realCurrentIndex + visibleCount - 1) % TOTAL_ITEMS) + 1
   ).padStart(2, '0');
-  const totalLabel = String(PROJECTS_DATA.length).padStart(2, '0');
+  const totalLabel = String(TOTAL_ITEMS).padStart(2, '0');
+
+  // Cloned items appended at the end for seamless infinite loop transition
+  const displayList = [...PROJECTS_DATA, ...PROJECTS_DATA.slice(0, visibleCount)];
 
   return (
     <section
@@ -134,26 +189,16 @@ export default function ProjectsSection({ onActiveCardChange }) {
               <button
                 type="button"
                 onClick={handlePanLeft}
-                disabled={!canPanLeft}
                 aria-label="Previous project module"
-                className={`w-10 h-10 rounded-xl border flex items-center justify-center font-mono text-sm transition-all ${
-                  canPanLeft
-                    ? 'bg-[#101014] border-white/25 text-white hover:bg-white hover:text-black shadow-[0_0_20px_rgba(255,255,255,0.12)] cursor-pointer'
-                    : 'bg-[#0a0a0d] border-white/10 text-zinc-600 cursor-not-allowed'
-                }`}
+                className="w-10 h-10 rounded-xl border flex items-center justify-center font-mono text-sm transition-all bg-[#101014] border-white/25 text-white hover:bg-white hover:text-black shadow-[0_0_20px_rgba(255,255,255,0.12)] cursor-pointer"
               >
                 ←
               </button>
               <button
                 type="button"
                 onClick={handlePanRight}
-                disabled={!canPanRight}
                 aria-label="Next project module"
-                className={`w-10 h-10 rounded-xl border flex items-center justify-center font-mono text-sm transition-all ${
-                  canPanRight
-                    ? 'bg-[#101014] border-white/25 text-white hover:bg-white hover:text-black shadow-[0_0_20px_rgba(255,255,255,0.12)] cursor-pointer'
-                    : 'bg-[#0a0a0d] border-white/10 text-zinc-600 cursor-not-allowed'
-                }`}
+                className="w-10 h-10 rounded-xl border flex items-center justify-center font-mono text-sm transition-all bg-[#101014] border-white/25 text-white hover:bg-white hover:text-black shadow-[0_0_20px_rgba(255,255,255,0.12)] cursor-pointer"
               >
                 →
               </button>
@@ -162,23 +207,23 @@ export default function ProjectsSection({ onActiveCardChange }) {
         </div>
 
         {/* 3D Perspective Horizontal Panning Track + Side Left/Right Arrow Buttons */}
-        <div className="relative flex items-center justify-center">
+        <div
+          onMouseMove={recordInteraction}
+          onTouchStart={recordInteraction}
+          onTouchMove={recordInteraction}
+          className="relative flex items-center justify-center"
+        >
           {/* Left Side Arrow Button */}
           <button
             type="button"
             onClick={handlePanLeft}
-            disabled={!canPanLeft}
             aria-label="Pan projects left"
-            className={`hidden sm:flex absolute left-0 xl:-left-5 z-40 w-11 h-11 rounded-full border items-center justify-center font-mono text-base transition-all ${
-              canPanLeft
-                ? 'bg-[#101014]/95 border-white/30 text-white hover:bg-white hover:text-black hover:scale-105 shadow-[0_10px_28px_rgba(0,0,0,0.85)] cursor-pointer'
-                : 'bg-[#09090c]/70 border-white/10 text-zinc-600 opacity-50 cursor-not-allowed'
-            }`}
+            className="hidden sm:flex absolute left-0 xl:-left-5 z-40 w-11 h-11 rounded-full border items-center justify-center font-mono text-base transition-all bg-[#101014]/95 border-white/30 text-white hover:bg-white hover:text-black hover:scale-105 shadow-[0_10px_28px_rgba(0,0,0,0.85)] cursor-pointer"
           >
             ←
           </button>
 
-          {/* Centered 4-Card Deck Window (No overflow-y clipping so the robotic arm limb extends freely to the top!) */}
+          {/* Centered Deck Window (No overflow-y clipping so the robotic arm limb extends freely to the top!) */}
           <div
             className="relative pt-6 pb-6 mx-auto"
             style={{
@@ -189,21 +234,28 @@ export default function ProjectsSection({ onActiveCardChange }) {
           >
             <motion.div
               animate={{ x: -startIndex * CARD_STEP_PX }}
-              transition={{ type: 'spring', stiffness: 210, damping: 28, mass: 0.75 }}
+              transition={
+                isJumping
+                  ? { duration: 0 }
+                  : { type: 'spring', stiffness: 210, damping: 28, mass: 0.75 }
+              }
               className="flex items-center gap-5"
             >
-              {PROJECTS_DATA.map((project, index) => {
+              {displayList.map((project, index) => {
                 const slotIndex = index - startIndex;
                 const isVisibleSlot =
                   slotIndex >= 0 && slotIndex < visibleCount;
                 return (
                   <ProjectCard
-                    key={project.id}
+                    key={`${project.id}-slot-${index}`}
                     project={project}
-                    index={index}
+                    index={index % TOTAL_ITEMS}
                     slotIndex={slotIndex}
                     isVisibleSlot={isVisibleSlot}
-                    isHovered={hoveredProject?.id === project.id}
+                    isHovered={
+                      hoveredProject?.id === project.id &&
+                      hoveredSlotIndex === slotIndex
+                    }
                     onHoverStart={handleHoverStart}
                     onHoverEnd={handleHoverEnd}
                     onGrabSelect={handleGrabSelect}
@@ -217,13 +269,8 @@ export default function ProjectsSection({ onActiveCardChange }) {
           <button
             type="button"
             onClick={handlePanRight}
-            disabled={!canPanRight}
             aria-label="Pan projects right"
-            className={`hidden sm:flex absolute right-0 xl:-right-5 z-40 w-11 h-11 rounded-full border items-center justify-center font-mono text-base transition-all ${
-              canPanRight
-                ? 'bg-[#101014]/95 border-white/30 text-white hover:bg-white hover:text-black hover:scale-105 shadow-[0_10px_28px_rgba(0,0,0,0.85)] cursor-pointer'
-                : 'bg-[#09090c]/70 border-white/10 text-zinc-600 opacity-50 cursor-not-allowed'
-            }`}
+            className="hidden sm:flex absolute right-0 xl:-right-5 z-40 w-11 h-11 rounded-full border items-center justify-center font-mono text-base transition-all bg-[#101014]/95 border-white/30 text-white hover:bg-white hover:text-black hover:scale-105 shadow-[0_10px_28px_rgba(0,0,0,0.85)] cursor-pointer"
           >
             →
           </button>
@@ -231,18 +278,19 @@ export default function ProjectsSection({ onActiveCardChange }) {
 
         {/* Bottom Pan Progress Dots */}
         <div className="mt-4 flex items-center justify-center gap-2">
-          {Array.from({ length: maxStartIndex + 1 }).map((_, idx) => (
+          {Array.from({ length: TOTAL_ITEMS }).map((_, idx) => (
             <button
               key={idx}
               type="button"
               onClick={() => {
+                recordInteraction();
                 setHoveredProject(null);
                 setHoveredSlotIndex(null);
                 setStartIndex(idx);
               }}
-              aria-label={`Go to project group ${idx + 1}`}
+              aria-label={`Go to project module ${idx + 1}`}
               className={`h-1.5 rounded-full transition-all cursor-pointer ${
-                startIndex === idx
+                realCurrentIndex === idx
                   ? 'w-7 bg-white'
                   : 'w-2 bg-white/20 hover:bg-white/45'
               }`}

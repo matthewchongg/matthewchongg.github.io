@@ -50,7 +50,7 @@ export const PROJECTS_DATA = [
       'Hardware-inspired split-flap board animations with synchronized sound cues.',
       'Custom JSON survey pack support for rapid game customization and live audience play.',
     ],
-    repoUrl: 'https://github.com/matthewchongg/friendly-feud',
+    repoUrl: 'https://matthewchongg.github.io/friendly-feud/',
     githubUrl: 'https://github.com/matthewchongg/friendly-feud',
   },
   {
