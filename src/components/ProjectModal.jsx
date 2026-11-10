@@ -28,7 +28,10 @@ export default function ProjectModal({ selectedProject, onClose }) {
         >
           {/* Modal + Extended Robotic Forearm Assembly */}
           <motion.div
-            layoutId={`project-card-container-${selectedProject.id}`}
+            initial={{ opacity: 0, scale: 0.92, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: 12 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 28, mass: 0.8 }}
             onClick={(e) => e.stopPropagation()}
             className="relative w-full max-w-3xl mt-12 rounded-2xl bg-[#0c0c0f] border border-white/30 shadow-[0_35px_100px_-15px_rgba(0,0,0,0.95),0_0_40px_rgba(255,255,255,0.1)] text-white"
           >
@@ -71,13 +74,11 @@ export default function ProjectModal({ selectedProject, onClose }) {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <motion.h2
-                    layoutId={`project-title-${selectedProject.id}`}
                     className="font-display text-3xl sm:text-4xl font-semibold tracking-tight text-white"
                   >
                     {selectedProject.title}
                   </motion.h2>
                   <motion.p
-                    layoutId={`project-subtitle-${selectedProject.id}`}
                     className="font-mono text-sm text-zinc-400 mt-1"
                   >
                     {selectedProject.subtitle}

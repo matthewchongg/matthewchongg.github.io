@@ -1,4 +1,6 @@
-export const PROJECTS_DATA = [
+import { Project } from '../types';
+
+export const PROJECTS_DATA: Project[] = [
   {
     id: 'loopday',
     index: '01',
@@ -143,7 +145,7 @@ export const PROJECTS_DATA = [
     shortDescription:
       'Template Module — 4-layer field-oriented control (FOC) motor driver and telemetry carrier board with isolated CAN-FD transceiver bus.',
     fullDescription:
-      'Reserved embedded hardware template for a custom 4-layer actuator controller PCB. Integrates an STM32G4 microcontroller, high-side current shunt amplifiers, magnetic encoder SPI interface, anddaisy-chained XT30 power bus.',
+      'Reserved embedded hardware template for a custom 4-layer actuator controller PCB. Integrates an STM32G4 microcontroller, high-side current shunt amplifiers, magnetic encoder SPI interface, and daisy-chained XT30 power bus.',
     metrics: [
       { label: 'BUS RATE', value: '5 Mbps CAN-FD' },
       { label: 'FOC LOOP', value: '25 kHz' },

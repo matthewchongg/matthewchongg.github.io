@@ -340,7 +340,6 @@ export default function ProjectCard({
       }`}
     >
       <motion.div
-        layoutId={`project-card-container-${project.id}`}
         animate={{
           y: isHovered ? -10 : 0,
         }}
@@ -443,13 +442,11 @@ export default function ProjectCard({
 
               <div>
                 <motion.h3
-                  layoutId={`project-title-${project.id}`}
                   className="font-display text-2xl font-semibold text-white tracking-tight"
                 >
                   {project.title}
                 </motion.h3>
                 <motion.p
-                  layoutId={`project-subtitle-${project.id}`}
                   className="font-mono text-xs text-zinc-400 mt-0.5 truncate"
                 >
                   {project.subtitle}
